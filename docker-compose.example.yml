@@ -1,0 +1,42 @@
+# Example deploy. Copy to docker-compose.yml and adjust paths.
+#
+# After `docker compose up -d`, install the host shim and verify:
+#     sudo ./scripts/install-host-shim.sh
+#     obsidian version
+
+services:
+  obsidian:
+    # Build locally:
+    build: .
+    # Or use the published image:
+    # image: ghcr.io/well-caffeinated/obsidian-headless-container:latest
+    container_name: obsidian
+    restart: unless-stopped
+    environment:
+      # UID/GID to run Obsidian as inside the container. Set to your host
+      # user's IDs so files written to the vault are owned by you.
+      #   echo "UID=$(id -u)\nGID=$(id -g)" > .env
+      # (Docker auto-loads .env for compose interpolation.)
+      PUID: ${UID:-1000}
+      PGID: ${GID:-1000}
+      # Optional: name of the vault directory under /vaults to mark "open".
+      # Defaults to the first vault alphabetically.
+      DEFAULT_VAULT: ""
+    volumes:
+      # Bind your vaults parent dir. Each subdirectory becomes a registered vault.
+      - ./vaults:/vaults
+      # Share the Unix socket with the host (and any sibling containers below).
+      # /run on the host is already tmpfs, so this costs nothing.
+      - /run/obsidian:/run/obsidian
+
+  # Example sibling container consuming the socket. Mount the same socket dir
+  # and run install-host-shim.sh during image build to get a usable `obsidian`.
+  #
+  # agent:
+  #   image: your-agent-image
+  #   volumes:
+  #     - /run/obsidian:/run/obsidian
+  #   environment:
+  #     OBSIDIAN_SOCK: unix:/run/obsidian/obsidian.sock
+  #   depends_on:
+  #     - obsidian

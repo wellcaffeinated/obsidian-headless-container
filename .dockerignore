@@ -1,0 +1,11 @@
+.git
+.github
+.gitignore
+.dockerignore
+README.md
+LICENSE
+docker-compose.yml
+docker-compose.example.yml
+scripts/smoke-test.sh
+scripts/install-host-shim.sh
+scripts/obsidian-docker-exec.sh
