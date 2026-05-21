@@ -26,25 +26,25 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libgbm1 \
         libsecret-1-0 \
         libdrm2 \
-        libfuse2t64 \
     && rm -rf /var/lib/apt/lists/*
 
-# Obsidian AppImage (multi-arch)
+# Obsidian (multi-arch). The .tar.gz is used rather than the AppImage:
+# extracting an AppImage requires executing its FUSE runtime, which fails
+# under QEMU emulation during multi-arch builds.
 RUN set -eux; \
     case "${TARGETARCH}" in \
-        amd64) APPIMAGE="Obsidian-${OBSIDIAN_VERSION}.AppImage" ;; \
-        arm64) APPIMAGE="Obsidian-${OBSIDIAN_VERSION}-arm64.AppImage" ;; \
+        amd64) TARBALL="obsidian-${OBSIDIAN_VERSION}.tar.gz" ;; \
+        arm64) TARBALL="obsidian-${OBSIDIAN_VERSION}-arm64.tar.gz" ;; \
         *) echo "unsupported arch: ${TARGETARCH}" >&2; exit 1 ;; \
     esac; \
     mkdir -p /opt/obsidian; \
-    cd /opt/obsidian; \
-    curl -fSL -o obsidian.AppImage \
-        "https://github.com/obsidianmd/obsidian-releases/releases/download/v${OBSIDIAN_VERSION}/${APPIMAGE}"; \
-    chmod +x obsidian.AppImage; \
-    ./obsidian.AppImage --appimage-extract >/dev/null; \
-    rm obsidian.AppImage; \
-    chmod -R go+rX /opt/obsidian; \
-    ln -s /opt/obsidian/squashfs-root/obsidian /opt/obsidian/obsidian; \
+    curl -fSL -o /tmp/obsidian.tar.gz \
+        "https://github.com/obsidianmd/obsidian-releases/releases/download/v${OBSIDIAN_VERSION}/${TARBALL}"; \
+    tar -xzf /tmp/obsidian.tar.gz -C /opt/obsidian; \
+    rm /tmp/obsidian.tar.gz; \
+    extracted="$(find /opt/obsidian -mindepth 1 -maxdepth 1 -type d -name 'obsidian-*')"; \
+    chmod -R go+rX "${extracted}"; \
+    ln -s "${extracted}/obsidian" /opt/obsidian/obsidian; \
     printf '#!/bin/sh\nexec /opt/obsidian/obsidian --no-sandbox --disable-gpu "$@"\n' > /usr/local/bin/obsidian; \
     chmod +x /usr/local/bin/obsidian
 
