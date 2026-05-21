@@ -12,11 +12,6 @@ Built on:
 - [ssrv](https://github.com/VHSgunzo/ssrv) — a static Go binary that relays
   argv, stdin, stdout/stderr and the exit code over a Unix socket.
 
-> [!IMPORTANT]
-> The Obsidian CLI is a [Catalyst](https://obsidian.md/pricing) feature ($25
-> one-time). This container does not bypass that — it enables the existing CLI
-> headlessly so it can be used from servers, agents, and CI.
-
 ## Quick start
 
 ```sh
