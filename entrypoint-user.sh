@@ -35,7 +35,7 @@ xvfb_pid=$!
 # 3. Generate obsidian.json from /vaults/*.
 mkdir -p "${CONFIG_DIR}"
 
-mapfile -t vault_paths < <(find "${VAULTS_DIR}" -mindepth 1 -maxdepth 1 -type d | sort)
+mapfile -t vault_paths < <(find "${VAULTS_DIR}" -mindepth 1 -maxdepth 1 -type d -not -name '.*' | sort)
 if [[ ${#vault_paths[@]} -eq 0 ]]; then
     log "ERROR: no vault directories found under ${VAULTS_DIR}. Bind-mount at least one."
     exit 1
