@@ -1,0 +1,70 @@
+name: update-obsidian
+
+on:
+  schedule:
+    - cron: '0 6 * * 1'  # weekly on Monday at 06:00 UTC
+  workflow_dispatch:
+
+jobs:
+  check-and-update:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get latest Obsidian version
+        id: latest
+        run: |
+          TAG=$(curl -fsSL \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/obsidianmd/obsidian-releases/releases/latest \
+            | jq -r '.tag_name')
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Get current pinned version
+        id: current
+        run: |
+          VERSION=$(grep -oP '(?<=ARG OBSIDIAN_VERSION=)\S+' Dockerfile)
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Check if update needed
+        id: check
+        run: |
+          if [ "${{ steps.current.outputs.version }}" = "${{ steps.latest.outputs.version }}" ]; then
+            echo "Already up to date (${{ steps.current.outputs.version }})"
+            echo "needed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Update available: ${{ steps.current.outputs.version }} → ${{ steps.latest.outputs.version }}"
+            echo "needed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Bump version in Dockerfile
+        if: steps.check.outputs.needed == 'true'
+        run: |
+          sed -i \
+            "s/ARG OBSIDIAN_VERSION=.*/ARG OBSIDIAN_VERSION=${{ steps.latest.outputs.version }}/" \
+            Dockerfile
+
+      - name: Open pull request
+        if: steps.check.outputs.needed == 'true'
+        uses: peter-evans/create-pull-request@v7
+        with:
+          commit-message: "chore: bump Obsidian to ${{ steps.latest.outputs.version }}"
+          branch: "auto/obsidian-${{ steps.latest.outputs.version }}"
+          title: "chore: bump Obsidian ${{ steps.current.outputs.version }} → ${{ steps.latest.outputs.version }}"
+          body: |
+            Automated version bump triggered by the daily release check.
+
+            | | Version |
+            |---|---|
+            | **Before** | `${{ steps.current.outputs.version }}` |
+            | **After** | `${{ steps.latest.outputs.version }}` |
+
+            Release notes: https://github.com/obsidianmd/obsidian-releases/releases/tag/${{ steps.latest.outputs.tag }}
+
+            Merging this PR will trigger `build-and-publish` to build and push updated images.
+          labels: dependencies
