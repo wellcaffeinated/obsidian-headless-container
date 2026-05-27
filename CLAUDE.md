@@ -31,6 +31,10 @@ socket.
 - **No Catalyst or paid license is required.** The CLI works on the free tier
   with `"cli": true` in `obsidian.json` (Obsidian 1.12+).
 
+## Working on this repo
+
+- **Always sync with remote before considering work done.** Run `git pull --rebase` (or `git fetch && git log origin/main`) before committing or declaring a task complete — the remote may have commits that need to be incorporated.
+
 ## Build & test
 
 - Pinned versions are Dockerfile ARGs: `OBSIDIAN_VERSION`, `FLING_VERSION`.
