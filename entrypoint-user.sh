@@ -1,6 +1,6 @@
 #!/bin/bash
 # Unprivileged entrypoint: brings up Xvfb, generates obsidian.json, launches
-# Obsidian, waits for readiness, then hands off to the ssrv relay.
+# Obsidian, waits for readiness, then hands off to the fling relay.
 set -euo pipefail
 
 OBSIDIAN_BIN="${OBSIDIAN_BIN:-/opt/obsidian/obsidian}"
@@ -90,8 +90,8 @@ if ! /opt/wait-for-obsidian.sh "${READY_TIMEOUT}"; then
 fi
 log "Obsidian is ready"
 
-# 6. Hand off to ssrv. -env all so DISPLAY/HOME propagate to relayed commands.
+# 6. Hand off to fling. Env vars (DISPLAY, HOME) are inherited from this process.
 mkdir -p "$(dirname "${OBSIDIAN_SOCK_PATH}")"
 rm -f "${OBSIDIAN_SOCK_PATH}"
 log "listening on unix:${OBSIDIAN_SOCK_PATH}"
-exec ssrv -srv -sock "unix:${OBSIDIAN_SOCK_PATH}" -env all
+exec fling server --socket "unix:${OBSIDIAN_SOCK_PATH}" --config /etc/fling/config.toml

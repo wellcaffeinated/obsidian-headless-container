@@ -2,7 +2,7 @@
 # End-to-end smoke test for the headless Obsidian container.
 #
 # Builds the image, runs it against a throwaway vault, exercises the CLI
-# from inside the container (via the ssrv server's own client mode), and
+# from inside the container (via the fling server's own client mode), and
 # tears down. Does not require the host shim to be installed.
 #
 # Usage:
@@ -58,14 +58,28 @@ if [[ ! -S "${sock_dir}/obsidian.sock" ]]; then
     exit 1
 fi
 
-echo "==> calling 'obsidian version' through ssrv"
-docker exec "${container}" ssrv -sock unix:/run/obsidian/obsidian.sock obsidian version
+echo "==> calling 'obsidian version' through fling"
+docker exec "${container}" fling --socket unix:/run/obsidian/obsidian.sock obsidian version
 
-echo "==> calling 'obsidian vault' through ssrv"
-docker exec "${container}" ssrv -sock unix:/run/obsidian/obsidian.sock obsidian vault
+echo "==> calling 'obsidian vault' through fling"
+docker exec "${container}" fling --socket unix:/run/obsidian/obsidian.sock obsidian vault
 
-echo "==> calling 'obsidian read path=note.md' through ssrv"
-docker exec "${container}" ssrv -sock unix:/run/obsidian/obsidian.sock obsidian read path=note.md
+echo "==> calling 'obsidian read path=note.md' through fling"
+docker exec "${container}" fling --socket unix:/run/obsidian/obsidian.sock obsidian read path=note.md
+
+echo "==> verifying allowlist rejects unlisted commands"
+for cmd in bash sh id cat env; do
+    output=$(docker exec "${container}" \
+        fling --socket unix:/run/obsidian/obsidian.sock "${cmd}" 2>&1) && {
+        echo "FAIL: fling accepted '${cmd}' — allowlist not enforced" >&2
+        exit 1
+    }
+    if ! echo "${output}" | grep -qi "not in the allowlist\|allowlist"; then
+        echo "FAIL: fling rejected '${cmd}' but error message was unexpected: ${output}" >&2
+        exit 1
+    fi
+    echo "  blocked: ${cmd}"
+done
 
 echo
 echo "SMOKE TEST PASSED"

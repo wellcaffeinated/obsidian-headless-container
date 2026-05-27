@@ -1,8 +1,7 @@
 FROM ubuntu:24.04
 
 ARG OBSIDIAN_VERSION=1.12.7
-ARG SSRV_VERSION=0.3.4
-ARG SSRV_BUILD=r0.g85a1f7f
+ARG FLING_VERSION=0.1.0
 ARG TARGETARCH
 
 ENV DEBIAN_FRONTEND=noninteractive
@@ -17,7 +16,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         dbus \
         xvfb \
         xdg-utils \
-        zstd \
         libgtk-3-0 \
         libnotify4 \
         libnss3 \
@@ -48,20 +46,23 @@ RUN set -eux; \
     printf '#!/bin/sh\nexec /opt/obsidian/obsidian --no-sandbox --disable-gpu "$@"\n' > /usr/local/bin/obsidian; \
     chmod +x /usr/local/bin/obsidian
 
-# ssrv (multi-arch)
+# fling (multi-arch)
 RUN set -eux; \
     case "${TARGETARCH}" in \
-        amd64) SARCH="x86_64" ;; \
-        arm64) SARCH="aarch64" ;; \
+        amd64) FARCH="x86_64" ;; \
+        arm64) FARCH="aarch64" ;; \
         *) echo "unsupported arch: ${TARGETARCH}" >&2; exit 1 ;; \
     esac; \
-    cd /tmp; \
-    curl -fSL -o ssrv.tar.zst \
-        "https://github.com/VHSgunzo/ssrv/releases/download/v${SSRV_VERSION}/ssrv-${SARCH}-v${SSRV_VERSION}.${SSRV_BUILD}.tar.zst"; \
-    mkdir -p ssrv-extract; \
-    tar --use-compress-program=unzstd -xf ssrv.tar.zst -C ssrv-extract; \
-    install -m 0755 "$(find ssrv-extract -type f -name ssrv | head -n1)" /usr/local/bin/ssrv; \
-    rm -rf ssrv.tar.zst ssrv-extract
+    curl -fSL -o /tmp/fling.tar.gz \
+        "https://github.com/wellcaffeinated/fling_rs/releases/download/v${FLING_VERSION}/fling-v${FLING_VERSION}-${FARCH}-unknown-linux-musl.tar.gz"; \
+    tar -xzf /tmp/fling.tar.gz -C /tmp fling; \
+    install -m 0755 /tmp/fling /usr/local/bin/fling; \
+    rm /tmp/fling.tar.gz /tmp/fling
+
+# fling allowlist: only the obsidian wrapper is permitted
+RUN mkdir -p /etc/fling && \
+    printf '[commands.obsidian]\nexecutable = "/usr/local/bin/obsidian"\n' \
+        > /etc/fling/config.toml
 
 RUN userdel -r ubuntu 2>/dev/null || true \
     && groupadd -g 1000 obsidian \
