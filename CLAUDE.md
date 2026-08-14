@@ -15,6 +15,9 @@ socket.
 - Socket: `/run/obsidian/obsidian.sock`. fling enforces an explicit allowlist
   (`/etc/fling/config.toml`); only the `obsidian` command is permitted. The
   trust boundary is still the socket's filesystem permissions.
+- Requires **fling 0.2+**. The config sets `sandbox = false` (fling 0.2 confines
+  relayed commands by default, which hides `/opt/obsidian` and the daemon's IPC
+  socket) and pins `working_dir` (0.2 no longer inherits the server's cwd).
 
 ## Critical gotchas
 

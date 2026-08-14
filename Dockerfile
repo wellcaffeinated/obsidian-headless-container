@@ -1,7 +1,7 @@
 FROM ubuntu:24.04
 
-ARG OBSIDIAN_VERSION=1.12.7
-ARG FLING_VERSION=0.1.0
+ARG OBSIDIAN_VERSION=1.13.7
+ARG FLING_VERSION=0.2.0
 ARG TARGETARCH
 
 ENV DEBIAN_FRONTEND=noninteractive
@@ -59,9 +59,23 @@ RUN set -eux; \
     install -m 0755 /tmp/fling /usr/local/bin/fling; \
     rm /tmp/fling.tar.gz /tmp/fling
 
-# fling allowlist: only the obsidian wrapper is permitted
+# fling allowlist (requires fling 0.2+). `obsidian` is the only key, so it is
+# the only executable fling will ever spawn.
+#
+#   allow       — any Obsidian subcommand; this image gates on the command, not
+#                 its arguments.
+#   working_dir — the daemon's home, so relative paths resolve there.
+#   sandbox     — off. Confinement would hide /opt/obsidian and the daemon's
+#                 IPC socket at ~/.obsidian-cli.sock, and gains nothing: the
+#                 relayed process is a thin client forwarding to an unconfined
+#                 daemon that already holds the vault open.
 RUN mkdir -p /etc/fling && \
-    printf '[commands.obsidian]\nexecutable = "/usr/local/bin/obsidian"\n' \
+    printf '%s\n' \
+        '[commands.obsidian]' \
+        'executable = "/usr/local/bin/obsidian"' \
+        'working_dir = "/home/obsidian"' \
+        'allow = ["*"]' \
+        'sandbox = false' \
         > /etc/fling/config.toml
 
 RUN userdel -r ubuntu 2>/dev/null || true \

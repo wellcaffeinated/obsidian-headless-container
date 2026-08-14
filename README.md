@@ -9,8 +9,9 @@ Built on:
 
 - [obsidianless](https://github.com/lucastraba/obsidianless) — the prior art for
   running Obsidian headlessly under Xvfb with `"cli": true` pre-seeded.
-- [ssrv](https://github.com/VHSgunzo/ssrv) — a static Go binary that relays
-  argv, stdin, stdout/stderr and the exit code over a Unix socket.
+- [fling](https://github.com/wellcaffeinated/fling_rs) — a static Rust binary
+  that relays argv, stdin, stdout/stderr and the exit code over a Unix socket,
+  behind an explicit command allowlist.
 
 ## Quick start
 
@@ -32,9 +33,9 @@ any sibling container that mounts the same path.
 
 Two options. The shim is recommended; the docker-exec function is a fallback.
 
-### Option A: ssrv shim (recommended)
+### Option A: fling shim (recommended)
 
-Installs the `ssrv` client and a tiny `obsidian` wrapper that targets the
+Installs the `fling` client and a tiny `obsidian` wrapper that targets the
 socket.
 
 ```sh
@@ -46,15 +47,9 @@ obsidian search query=meeting
 
 Override the socket location per-call: `OBSIDIAN_SOCK=unix:/elsewhere.sock obsidian version`.
 
-**Tradeoffs:** requires `ssrv` on the host (one static binary) and the socket
+**Tradeoffs:** requires `fling` on the host (one static binary) and the socket
 bind mount. The exact same shim works inside other containers — no Docker
 runtime knowledge in the call path.
-
-> [!WARNING]
-> `ssrv` lowercases the `-sock` path it is given. The socket directory must
-> therefore be an **all-lowercase path** on both ends. The default
-> `/run/obsidian` is fine; avoid bind-mounting the socket under a path with
-> uppercase characters (e.g. `/Users/Alice/...`, `/tmp/tmp.AbC123/...`).
 
 ### Option B: `docker exec` shell function
 
@@ -116,7 +111,7 @@ Environment variables understood by the entrypoint:
 | `DEFAULT_VAULT`   | first vault alphabetically       | Name of the `/vaults/*` subdir to mark open at startup |
 | `READY_TIMEOUT`   | `120`                            | Seconds to wait for Obsidian to respond before failing |
 | `VAULTS_DIR`      | `/vaults`                        | Where to scan for vault subdirectories                 |
-| `OBSIDIAN_SOCK_PATH` | `/run/obsidian/obsidian.sock` | Where the ssrv server listens                          |
+| `OBSIDIAN_SOCK_PATH` | `/run/obsidian/obsidian.sock` | Where the fling server listens                         |
 
 The container starts as root, remaps the `obsidian` user's UID/GID to match
 `PUID`/`PGID`, then drops privileges via `gosu` before launching Obsidian.
@@ -127,16 +122,32 @@ Build args (for `docker build`):
 
 | Arg                | Default        |
 | ------------------ | -------------- |
-| `OBSIDIAN_VERSION` | `1.12.7`       |
-| `SSRV_VERSION`     | `0.3.4`        |
-| `SSRV_BUILD`       | `r0.g85a1f7f`  |
+| `OBSIDIAN_VERSION` | `1.13.7`       |
+| `FLING_VERSION`    | `0.2.0`        |
+
+fling **0.2 or newer** is required; the shipped config uses keys older versions
+don't understand.
 
 ## Security model
 
-`ssrv` is an unrestricted exec relay — any client connected to the socket can
-run arbitrary commands inside the container. The trust boundary is the
-socket's filesystem permissions (and the volume mounts you set up). Treat
-"has the socket" as equivalent to "has shell in the Obsidian container."
+`fling` is an allowlisting relay: `/etc/fling/config.toml` names the only
+commands it will spawn, and this image allows exactly one — `obsidian`. A
+client on the socket therefore cannot run arbitrary binaries in the container.
+
+That is *not* the same as a sandbox. The allowlist constrains the command but
+not its arguments, and `obsidian eval` executes arbitrary JavaScript inside the
+app — with the vault mounted and network access. Treat "has the socket" as
+equivalent to "can read and write the whole vault and run arbitrary JS in the
+Obsidian process." The real trust boundary remains the socket's filesystem
+permissions and the volume mounts you set up.
+
+This image sets `sandbox = false`, opting out of fling's per-command
+confinement (see the [fling README][fling] for what that does). Confining the
+relayed process would gain nothing here: it is a thin client that forwards to a
+long-running Obsidian daemon which is unconfined and already holds the vault
+open. The container is the isolation boundary.
+
+[fling]: https://github.com/wellcaffeinated/fling_rs
 
 ## Notes & limitations
 
@@ -150,6 +161,17 @@ socket's filesystem permissions (and the volume mounts you set up). Treat
   expected in a headless container without GPU or user namespaces.
 - Indexing time on large vaults can extend startup well beyond the default
   `READY_TIMEOUT`; bump it as needed.
+- **`base:query` can return empty output with exit code 0.** Obsidian
+  materializes a Base *view* lazily, separately from the file index, and a
+  query that lands before the view is ready returns nothing — no error, no
+  stderr, no entry in `obsidian.log` or the captured console. On a 2000-note
+  vault, `obsidian files total` reported every file immediately while a
+  500-row view with a formula stayed empty for ~57s after startup, then
+  returned in full. Heavier views recompute longer and fail more often, so an
+  empty result is indistinguishable from a genuinely empty view. Retry until
+  non-empty rather than trusting a single call. This is an upstream Obsidian
+  behaviour, not a relay issue — it reproduces with `fling` entirely out of
+  the call path.
 
 ## Building locally
 

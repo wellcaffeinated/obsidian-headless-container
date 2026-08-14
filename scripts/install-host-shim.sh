@@ -14,7 +14,7 @@
 #   OBSIDIAN_SOCK=unix:/tmp/other.sock obsidian version
 set -eu
 
-FLING_VERSION="${FLING_VERSION:-0.1.0}"
+FLING_VERSION="${FLING_VERSION:-0.2.0}"
 PREFIX="${PREFIX:-/usr/local}"
 SOCK_DEFAULT="${SOCK_DEFAULT:-unix:/run/obsidian/obsidian.sock}"
 

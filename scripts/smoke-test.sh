@@ -68,13 +68,15 @@ echo "==> calling 'obsidian read path=note.md' through fling"
 docker exec "${container}" fling --socket unix:/run/obsidian/obsidian.sock obsidian read path=note.md
 
 echo "==> verifying allowlist rejects unlisted commands"
+# fling 0.2+ returns a uniform denial regardless of whether the command is
+# unknown or merely disallowed, so the rules don't leak which commands exist.
 for cmd in bash sh id cat env; do
     output=$(docker exec "${container}" \
         fling --socket unix:/run/obsidian/obsidian.sock "${cmd}" 2>&1) && {
         echo "FAIL: fling accepted '${cmd}' — allowlist not enforced" >&2
         exit 1
     }
-    if ! echo "${output}" | grep -qi "not in the allowlist\|allowlist"; then
+    if ! echo "${output}" | grep -qi "not authorized"; then
         echo "FAIL: fling rejected '${cmd}' but error message was unexpected: ${output}" >&2
         exit 1
     fi
