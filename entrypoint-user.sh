@@ -16,8 +16,12 @@ log() { printf '[entrypoint] %s\n' "$*" >&2; }
 
 xvfb_pid=""
 obsidian_pid=""
+fling_pid=""
+shutting_down=0
 cleanup() {
+    shutting_down=1
     log "shutting down"
+    [[ -n "${fling_pid}" ]] && kill "${fling_pid}" 2>/dev/null || true
     [[ -n "${obsidian_pid}" ]] && kill "${obsidian_pid}" 2>/dev/null || true
     [[ -n "${xvfb_pid}" ]] && kill "${xvfb_pid}" 2>/dev/null || true
     rm -f "${OBSIDIAN_SOCK_PATH}"
@@ -90,8 +94,41 @@ if ! /opt/wait-for-obsidian.sh "${READY_TIMEOUT}"; then
 fi
 log "Obsidian is ready"
 
-# 6. Hand off to fling. Env vars (DISPLAY, HOME) are inherited from this process.
+# 6. Start fling. Env vars (DISPLAY, HOME) are inherited from this process.
 mkdir -p "$(dirname "${OBSIDIAN_SOCK_PATH}")"
 rm -f "${OBSIDIAN_SOCK_PATH}"
 log "listening on unix:${OBSIDIAN_SOCK_PATH}"
-exec fling server --socket "unix:${OBSIDIAN_SOCK_PATH}" --config /etc/fling/config.toml
+fling server --socket "unix:${OBSIDIAN_SOCK_PATH}" --config /etc/fling/config.toml &
+fling_pid=$!
+
+# 7. Supervise. fling is deliberately *not* exec'd: it has no idea whether the
+# Obsidian daemon behind it is alive, and will happily keep serving a socket
+# with no backend. Every call then boots a fresh Electron app instead of
+# reaching the daemon, hangs, and exits non-zero — while the container still
+# looks healthy from the outside. Staying in the shell also means this process
+# reaps the daemon rather than leaving it a zombie.
+#
+# So: wait for whichever of the three dies first and take the container down
+# with it, letting the restart policy rebuild a working set.
+# `|| status=$?` keeps `set -e` from aborting before the diagnostics below:
+# wait returns the dead process's own (non-zero) status.
+status=0
+wait -n "${obsidian_pid}" "${fling_pid}" "${xvfb_pid}" || status=$?
+
+# A signal-driven stop (docker stop) runs cleanup first; that is not a failure.
+if (( shutting_down )); then
+    exit 0
+fi
+
+if ! kill -0 "${obsidian_pid}" 2>/dev/null; then
+    log "ERROR: Obsidian daemon exited (status ${status}) — the CLI cannot work without it"
+elif ! kill -0 "${fling_pid}" 2>/dev/null; then
+    log "ERROR: fling server exited (status ${status})"
+elif ! kill -0 "${xvfb_pid}" 2>/dev/null; then
+    log "ERROR: Xvfb exited (status ${status})"
+fi
+
+# Always fail, so `restart: on-failure` also recreates the container when a
+# component exits 0.
+log "exiting so the container restart policy can recover"
+exit $(( status == 0 ? 1 : status ))

@@ -83,5 +83,28 @@ for cmd in bash sh id cat env; do
     echo "  blocked: ${cmd}"
 done
 
+# Must run last: it takes the container down on purpose.
+echo "==> verifying the container exits when the Obsidian daemon dies"
+docker exec "${container}" pkill -f -- '--no-sandbox --disable-gpu' || true
+state="running"
+for _ in $(seq 1 30); do
+    state=$(docker inspect -f '{{.State.Status}}' "${container}" 2>/dev/null || echo gone)
+    [[ "${state}" == "running" ]] || break
+    sleep 1
+done
+if [[ "${state}" == "running" ]]; then
+    echo "FAIL: daemon died but the container kept running — fling would serve" >&2
+    echo "      a socket with no backend, and every call would boot a doomed" >&2
+    echo "      Electron app instead of reaching the daemon." >&2
+    docker logs --tail 20 "${container}" >&2 || true
+    exit 1
+fi
+code=$(docker inspect -f '{{.State.ExitCode}}' "${container}" 2>/dev/null || echo '?')
+if [[ "${code}" == "0" ]]; then
+    echo "FAIL: container exited 0; 'restart: on-failure' would not recover it" >&2
+    exit 1
+fi
+echo "  container exited (${state}, code ${code}) — restart policy can recover"
+
 echo
 echo "SMOKE TEST PASSED"

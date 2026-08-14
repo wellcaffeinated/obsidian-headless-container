@@ -11,7 +11,8 @@ socket.
   starts a system D-Bus, then `exec gosu obsidian entrypoint-user.sh`.
 - `entrypoint-user.sh` — runs as the **obsidian** user: Xvfb on `:99`, generates
   `~/.config/obsidian/obsidian.json` by scanning `/vaults/*`, launches the
-  Obsidian daemon, waits for readiness, then `exec fling server` on the socket.
+  Obsidian daemon, waits for readiness, starts `fling server` on the socket,
+  then supervises all three.
 - Socket: `/run/obsidian/obsidian.sock`. fling enforces an explicit allowlist
   (`/etc/fling/config.toml`); only the `obsidian` command is permitted. The
   trust boundary is still the socket's filesystem permissions.
@@ -33,6 +34,16 @@ socket.
   won't find the IPC socket, and produces no output — always go through fling.
 - **No Catalyst or paid license is required.** The CLI works on the free tier
   with `"cli": true` in `obsidian.json` (Obsidian 1.12+).
+- **Never `exec` fling from the entrypoint.** fling cannot tell whether the
+  Obsidian daemon behind it is alive and will serve a socket with no backend
+  indefinitely. With the daemon dead, a relayed call stops acting as a client
+  and boots a *fresh* Electron app: it hangs, exits 255, and prints app startup
+  noise (`Loaded main app package`, `Checking for update using Github`) instead
+  of command output — while `docker ps` still shows the container healthy.
+  `entrypoint-user.sh` therefore keeps the shell alive to `wait -n` on Xvfb,
+  the daemon and fling, exiting non-zero when any of them dies so the restart
+  policy recovers. Staying in the shell also reaps the daemon instead of
+  leaving it `<defunct>`. The smoke test asserts this.
 
 ## Working on this repo
 
