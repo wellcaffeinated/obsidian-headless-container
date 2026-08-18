@@ -5,13 +5,9 @@ its [CLI](https://help.obsidian.md/cli) over a Unix Domain Socket so that any
 process — on the host or in a sibling container — can invoke `obsidian <cmd>`
 transparently.
 
-Built on:
-
-- [obsidianless](https://github.com/lucastraba/obsidianless) — the prior art for
-  running Obsidian headlessly under Xvfb with `"cli": true` pre-seeded.
-- [fling](https://github.com/wellcaffeinated/fling_rs) — a static Rust binary
-  that relays argv, stdin, stdout/stderr and the exit code over a Unix socket,
-  behind an explicit command allowlist.
+Uses [fling](https://github.com/wellcaffeinated/fling_rs) — a static Rust binary
+that relays argv, stdin, stdout/stderr and the exit code over a Unix socket,
+behind an explicit command allowlist.
 
 ## Quick start
 
@@ -53,7 +49,7 @@ runtime knowledge in the call path.
 
 ### Option B: `docker exec` shell function
 
-Source the helper from your `.bashrc` / `.zshrc`:
+Source the helper for your `.bashrc` / `.zshrc`:
 
 ```sh
 source ./scripts/obsidian-docker-exec.sh
@@ -118,16 +114,6 @@ The container starts as root, remaps the `obsidian` user's UID/GID to match
 Vault contents are never chowned — `PUID` is expected to match the host owner
 of the vault directory.
 
-Build args (for `docker build`):
-
-| Arg                | Default        |
-| ------------------ | -------------- |
-| `OBSIDIAN_VERSION` | `1.13.7`       |
-| `FLING_VERSION`    | `0.2.0`        |
-
-fling **0.2 or newer** is required; the shipped config uses keys older versions
-don't understand.
-
 ## Security model
 
 `fling` is an allowlisting relay: `/etc/fling/config.toml` names the only
@@ -179,6 +165,10 @@ open. The container is the isolation boundary.
 docker build -t obsidian-headless .
 ./scripts/smoke-test.sh
 ```
+
+## Credits
+
+Inspired by [obsidianless](https://github.com/lucastraba/obsidianless)
 
 ## License
 
