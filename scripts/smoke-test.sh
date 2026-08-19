@@ -58,6 +58,22 @@ if [[ ! -S "${sock_dir}/obsidian.sock" ]]; then
     exit 1
 fi
 
+echo "==> verifying the image ships the pinned fling"
+# Guards against silent drift between the Dockerfile pin and what is actually
+# installed -- a mismatch is invisible at runtime until some version-specific
+# behaviour changes under you. Needs fling 0.2.1+, which added --version.
+pinned=$(grep -m1 '^ARG FLING_VERSION=' Dockerfile | cut -d= -f2)
+actual=$(docker exec "${container}" fling --version 2>/dev/null | awk '{print $2}')
+if [[ -z "${actual}" ]]; then
+    echo "FAIL: 'fling --version' returned nothing (needs fling 0.2.1+)" >&2
+    exit 1
+fi
+if [[ "${actual}" != "${pinned}" ]]; then
+    echo "FAIL: image ships fling ${actual}, Dockerfile pins ${pinned}" >&2
+    exit 1
+fi
+echo "  fling ${actual} matches the pin"
+
 echo "==> calling 'obsidian version' through fling"
 docker exec "${container}" fling --socket unix:/run/obsidian/obsidian.sock obsidian version
 
