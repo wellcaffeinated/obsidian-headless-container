@@ -13,6 +13,10 @@ socket.
   `~/.config/obsidian/obsidian.json` by scanning `/vaults/*`, launches the
   Obsidian daemon, waits for readiness, starts `fling server` on the socket,
   then supervises all three.
+- The daemon's stdout/stderr go to `/tmp/obsidian-daemon.log` (bounded by a
+  background trimmer). On death the entrypoint decodes the signal and dumps
+  the tail to stderr, so `docker logs` keeps the only forensic trail a
+  Chromium abort leaves. Env: `DAEMON_LOG*`.
 - Socket: `/run/obsidian/obsidian.sock`. fling enforces an explicit allowlist
   (`/etc/fling/config.toml`); only the `obsidian` command is permitted. The
   trust boundary is still the socket's filesystem permissions.
