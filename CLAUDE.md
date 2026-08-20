@@ -17,6 +17,14 @@ socket.
   background trimmer). On death the entrypoint decodes the signal and dumps
   the tail to stderr, so `docker logs` keeps the only forensic trail a
   Chromium abort leaves. Env: `DAEMON_LOG*`.
+- The daemon runs with `--disable-gpu-process-crash-limit`. Obsidian 1.13
+  (Electron 43 / Chromium 150) spawns a GPU process even under `--disable-gpu`,
+  which only disables acceleration; the process hosts the display compositor and
+  cannot be flagged away. Chromium aborts the *browser* process on that
+  process's third death (`GPU process isn't usable. Goodbye.` — status 133), so
+  without the flag a component nothing here uses can take the container down.
+  `--enable-logging` is paired with it: each GPU start then leaves one line, the
+  only trace a respawn loop would otherwise have. Asserted by the smoke test.
 - Socket: `/run/obsidian/obsidian.sock`. fling enforces an explicit allowlist
   (`/etc/fling/config.toml`); only the `obsidian` command is permitted. The
   trust boundary is still the socket's filesystem permissions.

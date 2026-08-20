@@ -99,6 +99,38 @@ for cmd in bash sh id cat env; do
     echo "  blocked: ${cmd}"
 done
 
+echo "==> verifying GPU process deaths do not take the container down"
+# Obsidian 1.13 (Chromium 150) runs a GPU process even under --disable-gpu, and
+# Chromium aborts the browser process on that process's third death -- exit 133,
+# indistinguishable from any other Chromium CHECK. --disable-gpu-process-crash-limit
+# in entrypoint-user.sh removes that policy; three kills is one past the limit,
+# so this fails if the flag is ever dropped or stops working.
+gpu_seen=0
+for round in 1 2 3; do
+    gpu_pid=$(docker exec "${container}" sh -c \
+        'ps -eo pid,args --no-headers | grep -- "--type=gpu-process" | grep -v grep | head -1 | awk "{print \$1}"')
+    if [[ -z "${gpu_pid}" ]]; then
+        echo "  no GPU process present (round ${round}) — this Electron does not spawn one"
+        break
+    fi
+    gpu_seen=1
+    docker exec "${container}" kill -9 "${gpu_pid}" 2>/dev/null || true
+    sleep 3
+    state=$(docker inspect -f '{{.State.Status}}' "${container}" 2>/dev/null || echo gone)
+    if [[ "${state}" != "running" ]]; then
+        code=$(docker inspect -f '{{.State.ExitCode}}' "${container}" 2>/dev/null || echo '?')
+        echo "FAIL: container died (${state}, code ${code}) after ${round} GPU process kill(s)." >&2
+        echo "      Chromium aborted the browser process over a component nothing here uses." >&2
+        docker logs --tail 20 "${container}" >&2 || true
+        exit 1
+    fi
+done
+if (( gpu_seen )); then
+    docker exec "${container}" fling --socket unix:/run/obsidian/obsidian.sock \
+        obsidian read path=note.md >/dev/null
+    echo "  survived 3 GPU process kills, CLI still answering"
+fi
+
 # Must run last: it takes the container down on purpose.
 echo "==> verifying the container exits when the Obsidian daemon dies"
 docker exec "${container}" pkill -f -- '--no-sandbox --disable-gpu' || true
