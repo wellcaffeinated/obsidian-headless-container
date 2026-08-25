@@ -1,7 +1,7 @@
 #!/bin/bash
 # End-to-end smoke test for the headless Obsidian container.
 #
-# Builds the image, runs it against a throwaway vault, exercises the CLI
+# Builds the image, runs it against throwaway vaults, exercises the CLI
 # from inside the container (via the fling server's own client mode), and
 # tears down. Does not require the host shim to be installed.
 #
@@ -16,7 +16,10 @@ image="obsidian-headless:smoke"
 container="ohc-smoke"
 test_dir=$(mktemp -d -t ohc-smoke.XXXXXX)
 sock_dir="${test_dir}/sock"
-vault_dir="${test_dir}/vaults/SmokeVault"
+# More than one vault: a single open vault hides the /dev/shm ceiling the check
+# below exists to catch. The first name sorts first, so it stays the default
+# vault; the rest carry spaces, as the real ones do.
+vaults=("SmokeVault" "SmokeVault Two" "SmokeVault Three" "SmokeVault Four")
 
 cleanup() {
     docker rm -f "${container}" >/dev/null 2>&1 || true
@@ -27,9 +30,12 @@ trap cleanup EXIT
 echo "==> building image"
 docker build -t "${image}" .
 
-echo "==> preparing throwaway vault at ${vault_dir}"
-mkdir -p "${vault_dir}/.obsidian" "${sock_dir}"
-echo "# hello smoke test" > "${vault_dir}/note.md"
+echo "==> preparing ${#vaults[@]} throwaway vaults under ${test_dir}/vaults"
+mkdir -p "${sock_dir}"
+for v in "${vaults[@]}"; do
+    mkdir -p "${test_dir}/vaults/${v}/.obsidian"
+    echo "# hello smoke test" > "${test_dir}/vaults/${v}/note.md"
+done
 # Ensure the in-container UID 1000 can write
 chmod -R a+rwX "${test_dir}"
 
@@ -98,6 +104,36 @@ for cmd in bash sh id cat env; do
     fi
     echo "  blocked: ${cmd}"
 done
+
+echo "==> verifying open vaults do not consume /dev/shm"
+# Open vaults exhaust the 64 MiB /dev/shm Docker gives a container by default
+# and the browser process dies silently -- see docs/chromium-flags.md. Crossing
+# the cliff is a coin flip, so the assertion is on usage (zero with the flag,
+# tens of MiB without); the liveness check catches the run that does trip it.
+for pass in 1 2; do
+    for v in "${vaults[@]}"; do
+        docker exec "${container}" fling --socket unix:/run/obsidian/obsidian.sock \
+            obsidian "vault=${v}" file path=note.md >/dev/null 2>&1 || true
+        state=$(docker inspect -f '{{.State.Status}}' "${container}" 2>/dev/null || echo gone)
+        if [[ "${state}" != "running" ]]; then
+            code=$(docker inspect -f '{{.State.ExitCode}}' "${container}" 2>/dev/null || echo '?')
+            echo "FAIL: container died (${state}, code ${code}) on pass ${pass}, on vault '${v}'." >&2
+            echo "      Open vaults exhausted /dev/shm — is --disable-dev-shm-usage still set?" >&2
+            docker logs --tail 20 "${container}" >&2 || true
+            exit 1
+        fi
+    done
+done
+shm_used=$(docker exec "${container}" df -m /dev/shm | awk 'NR==2 {print $3}')
+if [[ -z "${shm_used}" ]] || (( shm_used > 4 )); then
+    echo "FAIL: ${#vaults[@]} open vaults put ${shm_used:-?} MiB in /dev/shm; the cap is 64 MiB" >&2
+    echo "      and the browser process dies silently (status 133) on the allocation" >&2
+    echo "      that does not fit. Is --disable-dev-shm-usage still set?" >&2
+    exit 1
+fi
+docker exec "${container}" fling --socket unix:/run/obsidian/obsidian.sock \
+    obsidian read path=note.md >/dev/null
+echo "  ${#vaults[@]} vaults open, /dev/shm holds ${shm_used} MiB, CLI still answering"
 
 echo "==> verifying GPU process deaths do not take the container down"
 # Obsidian 1.13 (Chromium 150) runs a GPU process even under --disable-gpu, and

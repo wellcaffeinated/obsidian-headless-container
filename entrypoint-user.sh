@@ -130,24 +130,20 @@ log "launching Obsidian (${OBSIDIAN_BIN})"
 # only forensic trail a crash leaves. It goes to a file, not to stderr, so
 # Electron's steady-state chatter stays out of `docker logs`.
 : > "${DAEMON_LOG}"
-# --disable-gpu-process-crash-limit: Obsidian 1.13 (Electron 43 / Chromium 150)
-# spawns a GPU process even under --disable-gpu -- 1.12 (Electron 39) did not.
-# It hosts the display compositor, so --disable-gpu (which only turns off
-# acceleration), --disable-software-rasterizer and --disable-gpu-compositing all
-# leave it running. Chromium counts its deaths and, on the third, deliberately
-# aborts the *browser* process ("GPU process isn't usable. Goodbye." -> int3 ->
-# status 133/SIGTRAP), taking the daemon and this container with it. That abort
-# protects an interactive user from a black window; there is no window and no
-# user here, so let the GPU process respawn indefinitely instead. Verified: 14
-# kills of the GPU process, container alive, CLI answering throughout.
+# Two of these flags keep Chromium from aborting the browser process -- and with
+# it the daemon, the socket, and every client of the socket. Both aborts look the
+# same from outside: status 133, one of them printing nothing at all. Do not drop
+# either without reading docs/chromium-flags.md, which records what each one was
+# and what it cost to establish.
 #
-# --enable-logging routes Chromium's own diagnostics to stderr, and with them
-# the one line each GPU process start prints. Without it a GPU crash loop is
-# entirely silent -- the browser says nothing per death, so removing the abort
-# above would otherwise remove the only evidence it ever happened. Measured
-# cost: 5 lines across a 60-call run, against 62 the daemon writes anyway.
-"${OBSIDIAN_BIN}" --no-sandbox --disable-gpu --disable-gpu-process-crash-limit \
-    --enable-logging >>"${DAEMON_LOG}" 2>&1 &
+#   --disable-gpu-process-crash-limit  a GPU process exists even under
+#                                      --disable-gpu, and its third death aborts
+#                                      the browser
+#   --enable-logging                   the only trace a GPU respawn loop leaves
+#   --disable-dev-shm-usage            open vaults exhaust the 64 MiB /dev/shm
+#                                      Docker gives a container by default
+"${OBSIDIAN_BIN}" --no-sandbox --disable-gpu --disable-dev-shm-usage \
+    --disable-gpu-process-crash-limit --enable-logging >>"${DAEMON_LOG}" 2>&1 &
 obsidian_pid=$!
 
 # Deliberately not supervised by `wait -n` below: a dead trimmer costs disk,

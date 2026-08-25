@@ -143,8 +143,14 @@ open. The container is the isolation boundary.
   attempts a chown on startup but cannot succeed if the host directory was
   pre-created with restrictive ownership; either let docker create it via a
   named volume, or `sudo chown ${PUID}:${PGID} /run/obsidian` once.
-- The container ships with `--no-sandbox --disable-gpu` for Electron;
-  expected in a headless container without GPU or user namespaces.
+- The container ships with `--no-sandbox --disable-gpu` for Electron; expected in
+  a headless container without GPU or user namespaces. It also passes
+  `--disable-gpu-process-crash-limit`, `--enable-logging` and
+  `--disable-dev-shm-usage`, each of which keeps Chromium from taking the daemon
+  down over something this workload never uses — see
+  [docs/chromium-flags.md](docs/chromium-flags.md). The last of those is why
+  `shm_size` is not something you need to set; if you would rather keep that
+  memory in tmpfs, `shm_size: 1g` in your compose file does the same job.
 - Indexing time on large vaults can extend startup well beyond the default
   `READY_TIMEOUT`; bump it as needed.
 - **`base:query` can return empty output with exit code 0.** Obsidian
